@@ -1,0 +1,50 @@
+%python
+dbutils.widgets.text("filePath","")
+dbutils.widgets.text("tableName","")
+stageFilePath=dbutils.widgets.get("filePath")
+tableName=dbutils.widgets.get("tableName")
+--------------------------------
+%python
+storage_account_name="mataedap00reppocstorage"
+storage_account_Key="kkEjcwi0URox3cHWI9O4wMI8rd0PPTW8qt6xo/GD7n+e4DFRFCjWq72Kvnbr2yMI5TyMng4+jlVAHbI/BjwKuQ=="
+container="mataedap000reppoccontainer"
+------------------------------------
+%python
+spark.conf.set(f"fs.azure.account.key.{storage_account_name}.blob.core.windows.net",storage_account_Key)
+-----------------------------
+%python
+df = spark.read.format("csv") \
+      .option("inferSchema","true") \
+      .option("header","true") \
+      .option("sep", ",") \
+      .load(f"wasbs://{container}@{storage_account_name}.blob.core.windows.net/" + stageFilePath + "/tb" + tableName + ".csv")
+display(df)
+-------------------------
+%python
+df.createOrReplaceTempView(tableName)
+print(tableName)
+-----------------
+%sql
+Select * from $tableName
+
+---------------
+%python
+permanent_table_name = "staging."+ tableName + ""
+df.write.mode("overwrite").format("delta").saveAsTable(permanent_table_name)
+------------
+%sql
+
+MERGE INTO atomic.K2Master_tbFloor a
+   USING 
+   (
+   Select FloorID as mergeKey,* from staging.Floor 
+   union all
+   Select NULL as mergeKey,a.* from staging.Floor a join atomic.K2Master_tbFloor b on a.FloorID = b.FloorID and b.LatestRecord_Flag='Y'
+   ) b
+   ON a.FloorID=b.mergeKey
+   WHEN MATCHED  THEN 
+   UPDATE set  a.EftDateTime = current_timestamp() , LatestRecord_Flag ='N' , Deleted_Flag ='N'
+   WHEN NOT MATCHED  THEN 
+   INSERT (FloorID,BuildingID,FloorPosition,FloorName,GEA,GIA,Status,LastUpdate,LastUpdateUser,ArchiveUser,ArchiveDate,ArchiveReason,ArchiveTypeID,ArchiveResponsibility,SystemConfidence,UserConfidence,SessionID,LoadDateTime_NZST
+   ,LatestRecord_Flag,Deleted_Flag,EffDateTime,EftDateTime) VALUES (FloorID,BuildingID,FloorPosition,FloorName,GEA,GIA,Status,LastUpdate,LastUpdateUser,ArchiveUser,ArchiveDate,ArchiveReason,ArchiveTypeID,ArchiveResponsibility,SystemConfidence,UserConfidence,SessionID,current_date()
+   ,'Y','N',current_timestamp(),'9999-12-31')
